@@ -8,54 +8,105 @@ let tasks = [
     title: 'Welcome to TaskMaster!',
     completed: false,
     createdAt: new Date().toISOString(),
-    updatedAt: new Date().toISOString()
+    updatedAt: new Date().toISOString(),
+    tags: ["getting started", "tutorial"],
+    dueDate: null,
+    reminderDate: null
   },
   {
     id: 2,
     title: 'Click the circle to mark tasks as complete',
     completed: false,
     createdAt: new Date().toISOString(),
-    updatedAt: new Date().toISOString()
+    updatedAt: new Date().toISOString(),
+    tags: ["ui", "tutorial"],
+    dueDate: new Date(Date.now() + 3 * 24 * 60 * 60 * 1000).toISOString(), // Due in 3 days
+    reminderDate: null
   },
   {
     id: 3,
     title: 'Delete tasks you no longer need',
     completed: true,
     createdAt: new Date().toISOString(),
-    updatedAt: new Date().toISOString()
+    updatedAt: new Date().toISOString(),
+    tags: ["core feature"],
+    dueDate: null,
+    reminderDate: null
   }
 ];
 
-// Utility function to find task by ID
+// Utility function to find task by ID (expects id to be a number)
 const findTaskById = (id) => {
-  return tasks.find(task => task.id === parseInt(id));
+  return tasks.find(task => task.id === id);
 };
 
 // Get all tasks
 router.get('/', (req, res) => {
   try {
-    // Optional query parameters for filtering
-    const { completed, limit, sort } = req.query;
+    // Optional query parameters for filtering, searching, sorting, and pagination
+    const { completed, limit, sort, tag, search } = req.query;
     
-    let filteredTasks = [...tasks];
+    let filteredTasks = [...tasks]; // Start with a copy of all tasks
     
-    // Filter by completion status
+    // 1. Filter by completion status
     if (completed !== undefined) {
       const isCompleted = completed === 'true';
       filteredTasks = filteredTasks.filter(task => task.completed === isCompleted);
     }
-    
-    // Sort tasks
-    if (sort === 'newest') {
-      filteredTasks.sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt));
-    } else if (sort === 'oldest') {
-      filteredTasks.sort((a, b) => new Date(a.createdAt) - new Date(b.createdAt));
-    } else if (sort === 'alphabetical') {
-      filteredTasks.sort((a, b) => a.title.localeCompare(b.title));
+
+    // 2. Filter by tag
+    if (tag && tag.trim() !== '') {
+      const tagName = tag.trim();
+      filteredTasks = filteredTasks.filter(task => task.tags && task.tags.includes(tagName));
+    }
+
+    // 3. Filter by search term (applies to title, description, and tags)
+    if (search && search.trim() !== '') {
+      const searchTerm = search.trim().toLowerCase();
+      filteredTasks = filteredTasks.filter(task => {
+        const titleMatch = task.title.toLowerCase().includes(searchTerm);
+        // Ensure description exists before trying to search it
+        const descriptionMatch = task.description && task.description.toLowerCase().includes(searchTerm);
+        // Ensure tags exist and is an array before trying to search
+        const tagsMatch = Array.isArray(task.tags) && task.tags.some(t => String(t).toLowerCase().includes(searchTerm));
+        return titleMatch || descriptionMatch || tagsMatch;
+      });
     }
     
-    // Limit results
-    if (limit && !isNaN(limit)) {
+    // 4. Sort tasks
+    if (sort) {
+      switch (sort) {
+        case 'newest':
+          filteredTasks.sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt));
+          break;
+        case 'oldest':
+          filteredTasks.sort((a, b) => new Date(a.createdAt) - new Date(b.createdAt));
+          break;
+        case 'alphabetical':
+          filteredTasks.sort((a, b) => a.title.localeCompare(b.title));
+          break;
+        case 'dueDateAsc':
+          filteredTasks.sort((a, b) => {
+            if (!a.dueDate) return 1; // Tasks without due dates go last
+            if (!b.dueDate) return -1;
+            return new Date(a.dueDate) - new Date(b.dueDate);
+          });
+          break;
+        case 'dueDateDesc':
+          filteredTasks.sort((a, b) => {
+            if (!a.dueDate) return 1; // Tasks without due dates go last
+            if (!b.dueDate) return -1;
+            return new Date(b.dueDate) - new Date(a.dueDate);
+          });
+          break;
+        default:
+          // Optional: handle unknown sort parameters, or just ignore
+          break;
+      }
+    }
+    
+    // 5. Limit results
+    if (limit && !isNaN(parseInt(limit)) && parseInt(limit) > 0) {
       filteredTasks = filteredTasks.slice(0, parseInt(limit));
     }
     
@@ -68,20 +119,28 @@ router.get('/', (req, res) => {
 
 // Get a specific task by ID
 router.get('/:id', (req, res) => {
-    const task = findTaskById(req.params.id);
-    
+  try {
+    const numericId = parseInt(req.params.id);
+    if (isNaN(numericId)) {
+      return res.status(400).json({ error: 'Task ID must be a valid number' });
+    }
+
+    const task = findTaskById(numericId); // Use the parsed numericId
+
     if (!task) {
       return res.status(404).json({ error: 'Task not found' });
     }
-    
     res.json(task);
- 
+  } catch (error) {
+    console.error(`Error fetching task with id ${req.params.id}:`, error);
+    res.status(500).json({ error: 'Internal server error' });
+  }
 });
 
 // Create a new task
 router.post('/', (req, res) => {
   try {
-    const { title, description } = req.body;
+    const { title, description, tags, dueDate, reminderDate } = req.body;
     
     // Validation
     if (!title || title.trim() === '') {
@@ -99,7 +158,10 @@ router.post('/', (req, res) => {
       description: description ? description.trim() : '',
       completed: false,
       createdAt: new Date().toISOString(),
-      updatedAt: new Date().toISOString()
+      updatedAt: new Date().toISOString(),
+      tags: Array.isArray(tags) ? tags.map(t => String(t).trim()) : [],
+      dueDate: dueDate || null,
+      reminderDate: reminderDate || null
     };
     
     tasks.push(newTask);
@@ -114,13 +176,18 @@ router.post('/', (req, res) => {
 // Update a task
 router.put('/:id', (req, res) => {
   try {
-    const task = findTaskById(req.params.id);
+    const numericId = parseInt(req.params.id);
+    if (isNaN(numericId)) {
+      return res.status(400).json({ error: 'Task ID must be a valid number' });
+    }
+
+    const task = findTaskById(numericId); // Use the parsed numericId
     
     if (!task) {
       return res.status(404).json({ error: 'Task not found' });
     }
     
-    const { title, description, completed } = req.body;
+    const { title, description, completed, tags, dueDate, reminderDate } = req.body;
     
     // Validation
     if (title !== undefined) {
@@ -140,6 +207,21 @@ router.put('/:id', (req, res) => {
     if (completed !== undefined) {
       task.completed = Boolean(completed);
     }
+
+    if (tags !== undefined) {
+      if (!Array.isArray(tags)) {
+        return res.status(400).json({ error: 'Tags must be an array of strings' });
+      }
+      task.tags = tags.map(t => String(t).trim());
+    }
+
+    if (dueDate !== undefined) { // Allow setting dueDate to null
+      task.dueDate = dueDate;
+    }
+
+    if (reminderDate !== undefined) { // Allow setting reminderDate to null
+      task.reminderDate = reminderDate;
+    }
     
     task.updatedAt = new Date().toISOString();
     
@@ -153,7 +235,12 @@ router.put('/:id', (req, res) => {
 // Toggle task completion status
 router.patch('/:id/toggle', (req, res) => {
   try {
-    const task = findTaskById(req.params.id);
+    const numericId = parseInt(req.params.id);
+    if (isNaN(numericId)) {
+      return res.status(400).json({ error: 'Task ID must be a valid number' });
+    }
+
+    const task = findTaskById(numericId); // Use the parsed numericId
     
     if (!task) {
       return res.status(404).json({ error: 'Task not found' });
@@ -188,7 +275,12 @@ router.delete('/completed/all', (req, res) => {
 // Delete a task
 router.delete('/:id', (req, res) => {
   try {
-    const taskIndex = tasks.findIndex(task => task.id === parseInt(req.params.id));
+    const numericId = parseInt(req.params.id);
+    if (isNaN(numericId)) {
+      return res.status(400).json({ error: 'Task ID must be a valid number' });
+    }
+
+    const taskIndex = tasks.findIndex(task => task.id === numericId); // Use numericId here
     
     if (taskIndex === -1) {
       return res.status(404).json({ error: 'Task not found' });
