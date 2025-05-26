@@ -1,20 +1,57 @@
 import { useState, useEffect, useMemo } from 'react';
-import { Plus, Trash2, CheckCircle, Circle, Calendar, Clock, Target, TrendingUp, Sparkles, Zap, Star, Filter } from 'lucide-react';
+import { Plus, Trash2, CheckCircle, Circle, Calendar, Clock, Target, TrendingUp, Sparkles, Zap, Star, Filter, Tag as TagIcon, XCircle, CalendarDays, ArrowDownUp, ArrowDownNarrowWide, ArrowUpWideNarrow, SortAlphaDown, SortAlphaUp, Search as SearchIcon } from 'lucide-react'; // Added SearchIcon
 
 function App() {
   const [tasks, setTasks] = useState([]);
   const [title, setTitle] = useState('');
+  const [currentTag, setCurrentTag] = useState(''); 
+  const [dueDate, setDueDate] = useState(''); 
   const [isLoading, setIsLoading] = useState(false);
-  const [filter, setFilter] = useState('all');
+  const [filter, setFilter] = useState('all'); 
+  const [tagFilter, setTagFilter] = useState(null); 
+  const [sortBy, setSortBy] = useState('newest'); 
+  const [searchQuery, setSearchQuery] = useState(''); // State for immediate search input
+  const [debouncedSearchQuery, setDebouncedSearchQuery] = useState(searchQuery); // State for debounced search query
   const [showStats, setShowStats] = useState(true);
+
+  // Debounce search query
+  useEffect(() => {
+    const handler = setTimeout(() => {
+      setDebouncedSearchQuery(searchQuery);
+    }, 500); // 500ms delay
+
+    return () => {
+      clearTimeout(handler);
+    };
+  }, [searchQuery]);
 
   useEffect(() => {
     fetchTasks();
-  }, []);
+  }, [tagFilter, sortBy, debouncedSearchQuery]); // Re-fetch tasks when tag filter, sort order, or debounced search query changes
 
+  // Fetches tasks from the backend.
+  // Server-side filtering is applied for tags, sorting, and search.
+  // Client-side filtering (via useMemo for filteredTasks) is applied for task status (all/active/completed).
   const fetchTasks = async () => {
     try {
-      const res = await fetch('http://localhost:5000/api/tasks');
+      let url = 'http://localhost:5000/api/tasks';
+      const params = new URLSearchParams();
+
+      if (tagFilter) {
+        params.append('tag', tagFilter);
+      }
+      if (sortBy) {
+        params.append('sort', sortBy);
+      }
+      if (debouncedSearchQuery.trim() !== '') {
+        params.append('search', debouncedSearchQuery.trim());
+      }
+      
+      const queryString = params.toString();
+      if (queryString) {
+        url += `?${queryString}`;
+      }
+      const res = await fetch(url);
       const data = await res.json();
       setTasks(data);
     } catch (err) {
@@ -26,15 +63,27 @@ function App() {
     if (!title.trim()) return;
     
     setIsLoading(true);
+    const tags = currentTag.split(',').map(tag => tag.trim()).filter(tag => tag);
+    const taskData = { title: title.trim(), tags };
+    if (dueDate) {
+      taskData.dueDate = dueDate;
+    }
+
     try {
       const res = await fetch('http://localhost:5000/api/tasks', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ title: title.trim() }),
+        body: JSON.stringify(taskData),
       });
       const data = await res.json();
-      setTasks(prev => [...prev, data]);
+      // Optimistically add the new task to the local state.
+      // For stricter consistency with server-side sorting/filtering, 
+      // one might prefer to call fetchTasks() here to get the updated list.
+      // However, this optimistic update provides a faster UI response.
+      setTasks(prev => [...prev, data]); 
       setTitle('');
+      setCurrentTag(''); 
+      setDueDate(''); 
     } catch (err) {
       console.error('Error adding task:', err);
     } finally {
@@ -68,11 +117,15 @@ function App() {
   };
 
   const handleKeyPress = (e) => {
-    if (e.key === 'Enter') {
+    // Prevent adding task if Enter is pressed in the tag input field
+    if (e.key === 'Enter' && e.target.id !== 'tag-input') { 
       handleAdd();
     }
   };
 
+  // Client-side filtering based on the 'filter' state (all, active, completed).
+  // This operates on the 'tasks' array which is already potentially filtered 
+  // by tag, search, and sorted by the server.
   const filteredTasks = useMemo(() => {
     if (filter === 'completed') return tasks.filter(task => task.completed);
     if (filter === 'active') return tasks.filter(task => !task.completed);
@@ -206,16 +259,40 @@ function App() {
                 </div>
                 
                 <div className="flex gap-4">
-                  <div className="flex-1 relative group">
-                    <input
-                      type="text"
-                      value={title}
-                      onChange={(e) => setTitle(e.target.value)}
-                      onKeyPress={handleKeyPress}
-                      placeholder="What amazing thing will you accomplish today?"
-                      className="w-full px-6 py-4 bg-white/10 border border-white/30 rounded-2xl text-white placeholder-white/60 focus:outline-none focus:ring-2 focus:ring-violet-400 focus:border-transparent transition-all duration-300 backdrop-blur-sm hover:bg-white/15"
-                    />
-                    <div className="absolute inset-0 rounded-2xl bg-gradient-to-r from-violet-600/20 to-purple-600/20 opacity-0 group-hover:opacity-100 transition-opacity duration-300 pointer-events-none"></div>
+                  <div className="flex-1 space-y-4">
+                    <div className="relative group">
+                      <input
+                        type="text"
+                        value={title}
+                        onChange={(e) => setTitle(e.target.value)}
+                        onKeyPress={handleKeyPress}
+                        placeholder="What amazing thing will you accomplish today?"
+                        className="w-full px-6 py-4 bg-white/10 border border-white/30 rounded-2xl text-white placeholder-white/60 focus:outline-none focus:ring-2 focus:ring-violet-400 focus:border-transparent transition-all duration-300 backdrop-blur-sm hover:bg-white/15"
+                      />
+                      <div className="absolute inset-0 rounded-2xl bg-gradient-to-r from-violet-600/20 to-purple-600/20 opacity-0 group-hover:opacity-100 transition-opacity duration-300 pointer-events-none"></div>
+                    </div>
+                    <div className="relative group">
+                      <input
+                        type="text"
+                        id="tag-input" // Added id for handleKeyPress check
+                        value={currentTag}
+                        onChange={(e) => setCurrentTag(e.target.value)}
+                        onKeyPress={handleKeyPress}
+                        placeholder="Add tags (e.g., work, personal, urgent)"
+                        className="w-full px-6 py-4 bg-white/10 border border-white/30 rounded-2xl text-white placeholder-white/60 focus:outline-none focus:ring-2 focus:ring-violet-400 focus:border-transparent transition-all duration-300 backdrop-blur-sm hover:bg-white/15"
+                      />
+                      <div className="absolute inset-0 rounded-2xl bg-gradient-to-r from-violet-600/20 to-purple-600/20 opacity-0 group-hover:opacity-100 transition-opacity duration-300 pointer-events-none"></div>
+                    </div>
+                    <div className="relative group">
+                      <input
+                        type="date"
+                        value={dueDate}
+                        onChange={(e) => setDueDate(e.target.value)}
+                        className="w-full px-6 py-4 bg-white/10 border border-white/30 rounded-2xl text-white placeholder-white/60 focus:outline-none focus:ring-2 focus:ring-violet-400 focus:border-transparent transition-all duration-300 backdrop-blur-sm hover:bg-white/15"
+                        title="Set due date"
+                      />
+                       <div className="absolute inset-0 rounded-2xl bg-gradient-to-r from-violet-600/20 to-purple-600/20 opacity-0 group-hover:opacity-100 transition-opacity duration-300 pointer-events-none"></div>
+                    </div>
                   </div>
                   
                   <button
@@ -238,36 +315,84 @@ function App() {
             </div>
 
             {/* Filter Section */}
-            <div className="flex items-center justify-between mb-8">
-              <div className="flex items-center gap-4">
+            <div className="flex flex-col gap-6 mb-8"> 
+              <div className="flex items-center gap-4"> {/* Row for Search */}
+                <SearchIcon className="text-white/70" size={20} />
+                <span className="text-white/80 font-medium">Search:</span>
+                <div className="flex-1 relative group">
+                  <SearchIcon className="absolute left-4 top-1/2 -translate-y-1/2 w-5 h-5 text-white/40 group-focus-within:text-violet-400 transition-colors pointer-events-none" />
+                  <input
+                    type="text"
+                    placeholder="Search tasks (title, description, tags)..."
+                    value={searchQuery}
+                    onChange={(e) => setSearchQuery(e.target.value)}
+                    className="w-full pl-12 pr-4 py-3 bg-white/5 border border-white/20 rounded-xl text-white placeholder-white/60 focus:outline-none focus:ring-1 focus:ring-violet-500 focus:border-transparent backdrop-blur-sm hover:bg-white/10 transition-all"
+                  />
+                </div>
+              </div>
+              <div className="flex items-center gap-4"> {/* Row for Status Filters */}
                 <Filter className="text-white/70" size={20} />
-                <div className="flex gap-2">
+                <span className="text-white/80 font-medium">Filter:</span>
+                <div className="flex gap-2 items-center">
                   {[
                     { key: 'all', label: 'All Tasks', color: 'from-slate-600 to-slate-700' },
                     { key: 'active', label: 'Active', color: 'from-blue-600 to-blue-700' },
                     { key: 'completed', label: 'Completed', color: 'from-green-600 to-green-700' }
-                  ].map((filterType) => (
+                  ].map((item) => (
                     <button
-                      key={filterType.key}
-                      onClick={() => setFilter(filterType.key)}
-                      className={`px-6 py-3 rounded-xl font-medium transition-all duration-300 hover:scale-105 ${
-                        filter === filterType.key
-                          ? `bg-gradient-to-r ${filterType.color} text-white shadow-lg`
+                      key={item.key}
+                      onClick={() => { setFilter(item.key); setTagFilter(null); setSortBy('newest'); }}
+                      className={`px-5 py-2.5 rounded-xl font-medium transition-all duration-300 hover:scale-105 ${
+                        filter === item.key
+                          ? `bg-gradient-to-r ${item.color} text-white shadow-lg`
                           : 'bg-white/10 text-white/70 hover:bg-white/20 hover:text-white'
                       }`}
                     >
-                      {filterType.label}
+                      {item.label}
+                    </button>
+                  ))}
+                  {tagFilter && (
+                    <button
+                      onClick={() => setTagFilter(null)}
+                      className="flex items-center gap-2 px-4 py-2.5 rounded-xl font-medium bg-red-600/80 text-white hover:bg-red-700/80 transition-all duration-300 hover:scale-105 shadow-lg"
+                    >
+                      <XCircle size={18} />
+                      Tag: {tagFilter}
+                    </button>
+                  )}
+                </div>
+                 <button
+                onClick={() => setShowStats(!showStats)}
+                className="p-3 bg-white/10 hover:bg-white/20 rounded-xl transition-all duration-300 hover:scale-105 ml-auto" /* Added ml-auto */
+              >
+                <Calendar className="text-white/70" size={20} />
+              </button>
+              </div>
+              <div className="flex items-center gap-4">
+                <ArrowDownUp className="text-white/70" size={20} />
+                <span className="text-white/80 font-medium">Sort by:</span>
+                <div className="flex gap-2 items-center">
+                  {[
+                    { key: 'newest', label: 'Newest', icon: <ArrowDownNarrowWide size={16} className="mr-1.5" /> },
+                    { key: 'oldest', label: 'Oldest', icon: <ArrowUpWideNarrow size={16} className="mr-1.5" /> },
+                    { key: 'alphabetical', label: 'A-Z', icon: <SortAlphaDown size={16} className="mr-1.5" /> },
+                    { key: 'dueDateAsc', label: 'Due Date Asc', icon: <CalendarDays size={16} className="mr-1.5" /> },
+                    { key: 'dueDateDesc', label: 'Due Date Desc', icon: <CalendarDays size={16} className="mr-1.5" /> }
+                  ].map((sortOption) => (
+                    <button
+                      key={sortOption.key}
+                      onClick={() => setSortBy(sortOption.key)}
+                      className={`flex items-center px-4 py-2.5 rounded-xl font-medium transition-all duration-300 hover:scale-105 ${
+                        sortBy === sortOption.key
+                          ? 'bg-gradient-to-r from-purple-600 to-indigo-600 text-white shadow-lg'
+                          : 'bg-white/10 text-white/70 hover:bg-white/20 hover:text-white'
+                      }`}
+                    >
+                      {sortOption.icon} {sortOption.label}
                     </button>
                   ))}
                 </div>
               </div>
-              
-              <button
-                onClick={() => setShowStats(!showStats)}
-                className="p-3 bg-white/10 hover:bg-white/20 rounded-xl transition-all duration-300 hover:scale-105"
-              >
-                <Calendar className="text-white/70" size={20} />
-              </button>
             </div>
 
             {/* Tasks List */}
@@ -278,12 +403,16 @@ function App() {
                     <span className="text-4xl">✨</span>
                   </div>
                   <h3 className="text-2xl font-bold text-white mb-2">
-                    {filter === 'all' ? 'No tasks yet' : 
+                    {debouncedSearchQuery ? `No tasks found for "${debouncedSearchQuery}"` :
+                     tagFilter ? `No tasks with tag "${tagFilter}"` : 
+                     filter === 'all' ? 'No tasks yet' : 
                      filter === 'active' ? 'No active tasks' : 
                      'No completed tasks'}
                   </h3>
                   <p className="text-white/60 text-lg">
-                    {filter === 'all' ? 'Create your first task to get started!' : 
+                    {debouncedSearchQuery ? 'Try a different search term or clear other filters.' :
+                     tagFilter ? 'Try a different tag or clear the filter.' :
+                     filter === 'all' ? 'Create your first task to get started!' : 
                      filter === 'active' ? 'All caught up! Great work!' : 
                      'Complete some tasks to see them here!'}
                   </p>
@@ -331,7 +460,7 @@ function App() {
                             >
                               {task.title}
                             </span>
-                            <div className="flex items-center gap-4 mt-2">
+                            <div className="flex items-center gap-4 mt-1"> {/* Reduced margin top for date/tags */}
                               <div className="text-xs text-white/50 bg-white/10 px-3 py-1 rounded-full">
                                 {new Date(task.createdAt).toLocaleDateString('en-US', { 
                                   month: 'short', 
@@ -346,6 +475,34 @@ function App() {
                                 </div>
                               )}
                             </div>
+                            {task.tags && task.tags.length > 0 && (
+                              <div className="mt-2 flex flex-wrap gap-2">
+                                {task.tags.map(tag => (
+                                  <span 
+                                    key={tag} 
+                                    className="text-xs bg-purple-500/40 text-purple-200 px-3 py-1 rounded-full cursor-pointer hover:bg-purple-500/60 transition-all duration-200 hover:shadow-md"
+                                    onClick={() => setTagFilter(tag)}
+                                  >
+                                    <TagIcon size={12} className="inline mr-1" />{tag}
+                                  </span>
+                                ))}
+                              </div>
+                            )}
+                            {task.dueDate && (
+                              <div className="mt-2 text-xs flex items-center">
+                                <CalendarDays size={14} className={`mr-1.5 ${new Date(task.dueDate) < new Date() && !task.completed ? 'text-red-400' : 'text-blue-300'}`} />
+                                <span className={`font-medium px-2 py-1 rounded-full ${
+                                  new Date(task.dueDate) < new Date() && !task.completed 
+                                    ? 'bg-red-500/30 text-red-300' 
+                                    : 'bg-blue-500/30 text-blue-300'
+                                }`}>
+                                  Due: {new Date(task.dueDate).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}
+                                </span>
+                                {new Date(task.dueDate) < new Date() && !task.completed && (
+                                  <span className="ml-2 text-red-400 font-semibold">(Overdue)</span>
+                                )}
+                              </div>
+                            )}
                           </div>
                         </div>
                         
