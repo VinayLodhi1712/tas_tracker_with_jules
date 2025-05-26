@@ -68,14 +68,22 @@ router.get('/', (req, res) => {
 
 // Get a specific task by ID
 router.get('/:id', (req, res) => {
-    const task = findTaskById(req.params.id);
-    
+  try {
+    const numericId = parseInt(req.params.id);
+    if (isNaN(numericId)) {
+      return res.status(400).json({ error: 'Task ID must be a valid number' });
+    }
+
+    const task = findTaskById(req.params.id); // findTaskById does its own parseInt
+
     if (!task) {
       return res.status(404).json({ error: 'Task not found' });
     }
-    
     res.json(task);
- 
+  } catch (error) {
+    console.error(`Error fetching task with id ${req.params.id}:`, error);
+    res.status(500).json({ error: 'Internal server error' });
+  }
 });
 
 // Create a new task
@@ -114,6 +122,11 @@ router.post('/', (req, res) => {
 // Update a task
 router.put('/:id', (req, res) => {
   try {
+    const numericId = parseInt(req.params.id);
+    if (isNaN(numericId)) {
+      return res.status(400).json({ error: 'Task ID must be a valid number' });
+    }
+
     const task = findTaskById(req.params.id);
     
     if (!task) {
@@ -153,6 +166,11 @@ router.put('/:id', (req, res) => {
 // Toggle task completion status
 router.patch('/:id/toggle', (req, res) => {
   try {
+    const numericId = parseInt(req.params.id);
+    if (isNaN(numericId)) {
+      return res.status(400).json({ error: 'Task ID must be a valid number' });
+    }
+
     const task = findTaskById(req.params.id);
     
     if (!task) {
@@ -188,7 +206,12 @@ router.delete('/completed/all', (req, res) => {
 // Delete a task
 router.delete('/:id', (req, res) => {
   try {
-    const taskIndex = tasks.findIndex(task => task.id === parseInt(req.params.id));
+    const numericId = parseInt(req.params.id);
+    if (isNaN(numericId)) {
+      return res.status(400).json({ error: 'Task ID must be a valid number' });
+    }
+
+    const taskIndex = tasks.findIndex(task => task.id === numericId); // Use numericId here
     
     if (taskIndex === -1) {
       return res.status(404).json({ error: 'Task not found' });

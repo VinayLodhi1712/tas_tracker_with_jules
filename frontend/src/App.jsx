@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useMemo } from 'react';
 import { Plus, Trash2, CheckCircle, Circle, Calendar, Clock, Target, TrendingUp, Sparkles, Zap, Star, Filter } from 'lucide-react';
 
 function App() {
@@ -11,10 +11,6 @@ function App() {
   useEffect(() => {
     fetchTasks();
   }, []);
-  
-  useEffect(() => {
-  fetchTasks(); // This runs on every render - performance issue!
-}, []); 
 
   const fetchTasks = async () => {
     try {
@@ -77,11 +73,11 @@ function App() {
     }
   };
 
-  const filteredTasks = tasks.filter(task => {
-    if (filter === 'completed') return task.completed;
-    if (filter === 'active') return !task.completed;
-    return true;
-  });
+  const filteredTasks = useMemo(() => {
+    if (filter === 'completed') return tasks.filter(task => task.completed);
+    if (filter === 'active') return tasks.filter(task => !task.completed);
+    return tasks;
+  }, [tasks, filter]);
 
   const completedCount = tasks.filter(task => task.completed).length;
   const totalCount = tasks.length;
